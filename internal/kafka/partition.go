@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"github.com/Shopify/sarama"
 	"github.com/akamensky/go-log"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"ksnap/internal/message"
+	"time"
 )
 
 type Partition interface {
@@ -27,20 +29,16 @@ type partition struct {
 	end     int64
 }
 
-func newPartition(saramaClient sarama.Client, brokers []string, topic string, id int32) (Partition, error) {
+func newPartition(brokers []string, topic string, metadata kafka.PartitionMetadata, consumer *kafka.Consumer) (Partition, error) {
 	var err error
 	p := new(partition)
 
 	p.brokers = brokers
 	p.topic = topic
-	p.id = id
+	p.id = metadata.ID
 
-	p.start, err = saramaClient.GetOffset(p.topic, p.id, sarama.OffsetOldest)
-	if err != nil {
-		return nil, err
-	}
-
-	p.end, err = saramaClient.GetOffset(p.topic, p.id, sarama.OffsetNewest)
+	// Get topic offsets
+	p.start, p.end, err = consumer.GetWatermarkOffsets(p.topic, p.id)
 	if err != nil {
 		return nil, err
 	}
@@ -68,6 +66,13 @@ func (p *partition) Size() int64 {
 	return p.end - p.start
 }
 
+func (p *partition) kafkaLibTopicPartition() kafka.TopicPartition {
+	return kafka.TopicPartition{
+		Topic:     &p.topic,
+		Partition: p.id,
+	}
+}
+
 func (p *partition) GetConsumerOffsets() (map[string]Offset, error) {
 	return getConsumerOffsets(p.brokers, p.topic, p.id)
 }
@@ -93,38 +98,59 @@ func (p *partition) ReadMessages() <-chan message.Message {
 			}
 		}()
 
-		c, err := sarama.NewConsumer(p.brokers, getKafkaConfig())
+		c, err := kafka.NewConsumer(getKafkaConfig(p.brokers))
 		if err != nil {
 			panic(err)
 		}
 
-		pc, err := c.ConsumePartition(p.topic, p.id, sarama.OffsetOldest)
+		tp := p.kafkaLibTopicPartition()
+		tp.Offset, err = kafka.NewOffset(p.StartOffset())
+		if err != nil {
+			panic(err)
+		}
+
+		err = c.Assign([]kafka.TopicPartition{p.kafkaLibTopicPartition()})
 		if err != nil {
 			panic(err)
 		}
 
 		lastOffset := p.EndOffset() - 1
-		for kafkaMessage := range pc.Messages() {
-			msgHeaders := make([]message.Header, len(kafkaMessage.Headers))
-			for _, kafkaHeader := range kafkaMessage.Headers {
-				msgHeaders = append(msgHeaders, message.NewHeader(kafkaHeader.Key, kafkaHeader.Value))
+
+		for true {
+			ev := c.Poll(5000)
+			if ev == nil {
+				continue
 			}
-			msg := message.NewMessage(kafkaMessage.Topic, kafkaMessage.Partition, kafkaMessage.Offset, kafkaMessage.Key, kafkaMessage.Value, kafkaMessage.Timestamp, kafkaMessage.BlockTimestamp, msgHeaders)
 
-			output <- msg
-
-			if kafkaMessage.Offset >= lastOffset {
-				err = pc.Close()
-				if err != nil {
-					panic(err)
+			switch e := ev.(type) {
+			case *kafka.Message:
+				msgHeaders := make([]message.Header, len(e.Headers))
+				for _, kafkaHeader := range e.Headers {
+					msgHeaders = append(msgHeaders, message.NewHeader([]byte(kafkaHeader.Key), kafkaHeader.Value))
 				}
+				msg := message.NewMessage(*e.TopicPartition.Topic, e.TopicPartition.Partition, int64(e.TopicPartition.Offset), e.Key, e.Value, e.Timestamp, time.Now(), msgHeaders)
 
-				close(output)
+				output <- msg
 
-				return
+				if int64(e.TopicPartition.Offset) >= lastOffset {
+					err = c.Close()
+					if err != nil {
+						panic(err)
+					}
+
+					close(output)
+
+					return
+				}
+			case kafka.Error:
+				if e.Code() == kafka.ErrPartitionEOF {
+					close(output)
+					return
+				} else {
+					panic(e)
+				}
 			}
 		}
-
 	}(p, result)
 
 	return result

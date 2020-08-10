@@ -1,7 +1,7 @@
 package kafka
 
 import (
-	"github.com/Shopify/sarama"
+	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
 
 type Client interface {
@@ -35,24 +35,24 @@ func NewClient(brokers []string) (Client, error) {
 
 	c.brokers = brokers
 
-	saramaClient, err := sarama.NewClient(c.brokers, getKafkaConfig())
+	consumer, err := kafka.NewConsumer(getKafkaConfig(brokers))
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
-		err := saramaClient.Close()
+		err := consumer.Close()
 		if err != nil {
 			panic(err)
 		}
 	}()
 
-	topicList, err := saramaClient.Topics()
+	metadata, err := consumer.GetMetadata(nil, true, 5000)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, topicName := range topicList {
-		t, err := newTopic(saramaClient, brokers, topicName)
+	for _, topicMetadata := range metadata.Topics {
+		t, err := newTopic(brokers, topicMetadata, consumer)
 		if err != nil {
 			return nil, err
 		}

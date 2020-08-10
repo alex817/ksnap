@@ -1,6 +1,8 @@
 package kafka
 
-import "github.com/Shopify/sarama"
+import (
+	"github.com/confluentinc/confluent-kafka-go/kafka"
+)
 
 type Topic interface {
 	Name() string
@@ -13,18 +15,13 @@ type topic struct {
 	partitions []Partition
 }
 
-func newTopic(saramaClient sarama.Client, brokers []string, name string) (Topic, error) {
+func newTopic(brokers []string, metadata kafka.TopicMetadata, consumer *kafka.Consumer) (Topic, error) {
 	t := new(topic)
 	t.brokers = brokers
-	t.name = name
+	t.name = metadata.Topic
 
-	partitions, err := saramaClient.Partitions(name)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, partitionId := range partitions {
-		p, err := newPartition(saramaClient, brokers, t.name, partitionId)
+	for _, partitionMetadata := range metadata.Partitions {
+		p, err := newPartition(brokers, t.name, partitionMetadata, consumer)
 		if err != nil {
 			return nil, err
 		}
