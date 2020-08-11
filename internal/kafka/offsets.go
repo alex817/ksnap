@@ -32,7 +32,7 @@ func NewOffset(offset int64, metadata string) Offset {
 }
 
 func getConsumerOffsets(brokers []string, topic string, partition int32) (map[string]Offset, error) {
-	c, err := sarama.NewClusterAdmin(brokers, getKafkaConfig())
+	c, err := sarama.NewClusterAdmin(brokers, getSaramaConfig())
 	if err != nil {
 		return nil, err
 	}

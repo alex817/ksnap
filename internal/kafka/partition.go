@@ -98,7 +98,7 @@ func (p *partition) ReadMessages() <-chan message.Message {
 			}
 		}()
 
-		c, err := kafka.NewConsumer(getKafkaConfig(p.brokers))
+		c, err := kafka.NewConsumer(getConfluentLibConfig(p.brokers))
 		if err != nil {
 			panic(err)
 		}
@@ -161,7 +161,7 @@ func (p *partition) WriteMessages() (chan<- message.Message, <-chan interface{},
 	doneCh := make(chan interface{})
 	offsetCh := make(chan map[int64]int64)
 
-	sp, err := sarama.NewSyncProducer(p.brokers, getKafkaConfig())
+	sp, err := sarama.NewSyncProducer(p.brokers, getSaramaConfig())
 	if err != nil {
 		panic(err)
 	}

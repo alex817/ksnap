@@ -35,7 +35,7 @@ func NewClient(brokers []string) (Client, error) {
 
 	c.brokers = brokers
 
-	consumer, err := kafka.NewConsumer(getKafkaConfig(brokers))
+	consumer, err := kafka.NewConsumer(getConfluentLibConfig(brokers))
 	if err != nil {
 		return nil, err
 	}
