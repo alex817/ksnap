@@ -15,6 +15,7 @@ func getConfluentLibConfig(brokers []string) *kafka.ConfigMap {
 		"enable.partition.eof":  "true",
 		"check.crcs":            "true",
 		"enable.idempotence":    "true",
+		"group.id":              "TempKafkaGroup1",
 	}
 
 	return config
