@@ -38,7 +38,7 @@ func newPartition(brokers []string, topic string, metadata kafka.PartitionMetada
 	p.id = metadata.ID
 
 	// Get topic offsets
-	p.start, p.end, err = consumer.GetWatermarkOffsets(p.topic, p.id)
+	p.start, p.end, err = consumer.QueryWatermarkOffsets(p.topic, p.id, 1000)
 	if err != nil {
 		return nil, err
 	}
